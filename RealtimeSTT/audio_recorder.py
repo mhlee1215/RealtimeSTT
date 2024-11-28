@@ -45,6 +45,7 @@ import webrtcvad
 import itertools
 import datetime
 import platform
+import sounddevice
 import pyaudio
 import logging
 import struct

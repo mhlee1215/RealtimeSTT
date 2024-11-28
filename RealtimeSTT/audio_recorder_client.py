@@ -335,6 +335,7 @@ class AudioToTextRecorderClient:
 
         try:
             # Connect to control WebSocket
+
             self.control_ws = WebSocketApp(self.control_url,
                                                      on_message=self.on_control_message,
                                                      on_error=self.on_error,
@@ -351,7 +352,6 @@ class AudioToTextRecorderClient:
                                                   on_error=self.on_error,
                                                   on_close=self.on_close,
                                                   on_open=self.on_data_open)
-
             self.data_ws_thread = threading.Thread(target=self.data_ws.run_forever)
             self.data_ws_thread.daemon = False
             self.data_ws_thread.start()

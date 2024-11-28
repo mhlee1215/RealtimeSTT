@@ -61,7 +61,7 @@ The server supports two WebSocket connections:
 The server will broadcast real-time transcription updates to all connected clients on the data WebSocket.
 """
 
-from .install_packages import check_and_install_packages
+from RealtimeSTT_server.install_packages import check_and_install_packages
 from difflib import SequenceMatcher
 from collections import deque
 from datetime import datetime
@@ -744,10 +744,11 @@ async def main_async():
 
     try:
         # Attempt to start control and data servers
-        control_server = await websockets.serve(control_handler, "localhost", args.control)
-        data_server = await websockets.serve(data_handler, "localhost", args.data)
-        print(f"{bcolors.OKGREEN}Control server started on {bcolors.OKBLUE}ws://localhost:{args.control}{bcolors.ENDC}")
-        print(f"{bcolors.OKGREEN}Data server started on {bcolors.OKBLUE}ws://localhost:{args.data}{bcolors.ENDC}")
+        host_url = "127.0.0.1"
+        control_server = await websockets.serve(control_handler, host_url, args.control)
+        data_server = await websockets.serve(data_handler, host_url, args.data)
+        print(f"{bcolors.OKGREEN}Control server started on {bcolors.OKBLUE}ws://{host_url}:{args.control}{bcolors.ENDC}")
+        print(f"{bcolors.OKGREEN}Data server started on {bcolors.OKBLUE}ws://{host_url}:{args.data}{bcolors.ENDC}")
 
         # Start the broadcast and recorder threads
         broadcast_task = asyncio.create_task(broadcast_audio_messages())
