@@ -26,7 +26,7 @@ Author: Kolja Beigel
 
 """
 
-from typing import Iterable, List, Optional, Union
+from typing import Iterable, List, Optional, Union, Collection, Dict
 import torch.multiprocessing as mp
 import torch
 from ctypes import c_bool
@@ -57,6 +57,10 @@ import copy
 import os
 import re
 import gc
+# from transformers import pipeline
+# from transformers import WhisperForConditionalGeneration, WhisperProcessor, WhisperTokenizer
+
+
 
 # Set OpenMP runtime duplicate library handling to OK (Use only for development!)
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
@@ -128,7 +132,6 @@ class TranscriptionWorker:
              __builtins__['print'] = self.custom_print
 
         logging.info(f"Initializing faster_whisper main transcription model {self.model_path}")
-
         try:
             model = faster_whisper.WhisperModel(
                 model_size_or_path=self.model_path,
@@ -152,15 +155,19 @@ class TranscriptionWorker:
                 try:
                     audio, language = self.queue.get(timeout=0.1)
                     try:
+                        language = None
+                        print(f"!!!!!!!! {language}")
                         segments, info = model.transcribe(
                             audio,
                             language=language if language else None,
                             beam_size=self.beam_size,
                             initial_prompt=self.initial_prompt,
-                            suppress_tokens=self.suppress_tokens
+                            suppress_tokens=self.suppress_tokens,
+                            task="transcribe"
                         )
                         transcription = " ".join(seg.text for seg in segments).strip()
                         logging.debug(f"Final text detected with main model: {transcription}")
+                        print(f"{info.language}")
                         self.conn.send(('success', (transcription, info)))
                     except Exception as e:
                         logging.error(f"General error in transcription: {e}")
@@ -625,6 +632,9 @@ class AudioToTextRecorder:
 
         # Set device for model
         self.device = "cuda" if self.device == "cuda" and torch.cuda.is_available() else "cpu"
+        print(f"{bcolors.OKGREEN}self.device:{self.device}{bcolors.ENDC}")
+        print(f"{bcolors.OKGREEN}self.realtime_model_type:{self.realtime_model_type}{bcolors.ENDC}")
+
 
         self.transcript_process = self._start_thread(
             target=AudioToTextRecorder._transcription_worker,
@@ -667,15 +677,34 @@ class AudioToTextRecorder:
         # Initialize the realtime transcription model
         if self.enable_realtime_transcription and not self.use_main_model_for_realtime:
             try:
+
+                # if self.realtime_model_type == "tiny":
                 logging.info("Initializing faster_whisper realtime "
                              f"transcription model {self.realtime_model_type}"
                              )
+
                 self.realtime_model_type = faster_whisper.WhisperModel(
                     model_size_or_path=self.realtime_model_type,
                     device=self.device,
                     compute_type=self.compute_type,
                     device_index=self.gpu_device_index
                 )
+                # elif "openai/whisper-large-v3" in self.realtime_model_type:
+                #     # from transformers import pipeline
+                #     # from transformers import WhisperForConditionalGeneration, WhisperProcessor, WhisperTokenizer
+                #
+                #     self.asr_pipeline = pipeline(
+                #         "automatic-speech-recognition",
+                #         model=self.realtime_model_type,
+                #         device=self.device,
+                #     )
+                #
+                #     self.asr_model = WhisperForConditionalGeneration.from_pretrained(
+                #         self.realtime_model_type).to(self.device)
+                #     self.asr_processor = WhisperProcessor.from_pretrained(self.realtime_model_type)
+                # elif self.realtime_model_type == "mlx-community/whisper-large-v3-mlx":
+                #     pass
+
 
             except Exception as e:
                 logging.exception("Error initializing faster_whisper "
@@ -2002,6 +2031,43 @@ class AudioToTextRecorder:
         if self.use_extended_logging:
             logging.debug('Debug: Exiting _recording_worker method')
 
+    # def detect_language(self, model: WhisperForConditionalGeneration,
+    #                     tokenizer: WhisperTokenizer, input_features,
+    #                     possible_languages: Optional[Collection[str]] = None) -> \
+    # List[Dict[str, float]]:
+    #     # hacky, but all language tokens and only language tokens are 6 characters long
+    #     language_tokens = [t for t in tokenizer.additional_special_tokens if
+    #                        len(t) == 6]
+    #     if possible_languages is not None:
+    #         language_tokens = [t for t in language_tokens if
+    #                            t[2:-2] in possible_languages]
+    #         if len(language_tokens) < len(possible_languages):
+    #             raise RuntimeError(
+    #                 f'Some languages in {possible_languages} did not have associated language tokens')
+    #
+    #     language_token_ids = tokenizer.convert_tokens_to_ids(language_tokens)
+    #
+    #     # 50258 is the token for transcribing
+    #     logits = model(input_features.to(self.device),
+    #                    decoder_input_ids=torch.tensor([[50258] for _ in range(
+    #                        input_features.shape[0])]).to(self.device)).logits
+    #     mask = torch.ones(logits.shape[-1], dtype=torch.bool)
+    #     mask[language_token_ids] = False
+    #     logits[:, :, mask] = -float('inf')
+    #
+    #     output_probs = logits.softmax(dim=-1).cpu()
+    #     # import ipdb
+    #     # ipdb.set_trace()
+    #     # return [
+    #     #     {
+    #     #         lang: output_probs[input_idx, 0, token_id].item()
+    #     #         for token_id, lang in zip(language_token_ids, language_tokens)
+    #     #     }
+    #     #     for input_idx in range(logits.shape[0])
+    #     # ]
+    #
+    #     return language_tokens[torch.argmax(output_probs[0, 0, language_token_ids])].replace('<|', '').replace('|>', '')
+
 
     def _realtime_worker(self):
         """
@@ -2047,7 +2113,7 @@ class AudioToTextRecorder:
                         with self.transcription_lock:
                             try:
                                 self.parent_transcription_pipe.send((audio_array, self.language))
-                                if self.parent_transcription_pipe.poll(timeout=5):  # Wait for 5 seconds
+                                if self.parent_transcription_pipe.poll(timeout=10):  # Wait for 5 seconds
                                     logging.debug("Receive from realtime worker after transcription request to main model")
                                     status, result = self.parent_transcription_pipe.recv()
                                     if status == 'success':
@@ -2067,19 +2133,56 @@ class AudioToTextRecorder:
                                 continue
                     else:
                         # Perform transcription and assemble the text
+                        # if self.realtime_model_type == "mlx-community/whisper-large-v3-mlx":
+                        #     import mlx_whisper
+                        #
+                        #     segments = mlx_whisper.transcribe(
+                        #         audio_array,
+                        #         path_or_hf_repo=self.realtime_model_type)
+                        #     info = None
+                        #     print(f"{bcolors.OKGREEN}self.run!!.. {segments}{bcolors.ENDC}")
+                        # elif "openai/whisper-large-v3" in self.realtime_model_type:
+                        #     input_features = self.asr_processor(audio_array,
+                        #                                         sampling_rate=self.sample_rate,
+                        #                                         return_tensors="pt").input_features
+                        #     # import time
+                        #     # start = time.time()
+                        #     language = self.detect_language(self.asr_model, self.asr_pipeline.tokenizer, input_features,
+                        #                                     {'en', 'ko', 'vi'})
+                        #     # logger.info(f"Language detection {time.time() - start} secs")
+                        #     # print(f"language: {language}")
+                        #
+                        #     segments = self.asr_pipeline(audio_array,
+                        #                                   generate_kwargs={
+                        #                                       "language": 'ko'},
+                        #                                   )
+                        #     segments["language"] = language
+                        #     info = None
+                        #     print(f"{bcolors.OKGREEN}self.run!!.. {segments}{bcolors.ENDC}")
+                        # else:
+                        print("????????")
                         segments, info = self.realtime_model_type.transcribe(
                             audio_array,
                             language=self.language if self.language else None,
                             beam_size=self.beam_size_realtime,
                             initial_prompt=self.initial_prompt,
                             suppress_tokens=self.suppress_tokens,
+                            task="transcribe"
                         )
 
-                        self.detected_realtime_language = info.language if info.language_probability > 0 else None
-                        self.detected_realtime_language_probability = info.language_probability
-                        realtime_text = " ".join(
-                            seg.text for seg in segments
-                        )
+                        if info is not None:
+                            self.detected_realtime_language = info.language if info.language_probability > 0 else None
+                            self.detected_realtime_language_probability = info.language_probability
+                        else:
+                            self.detected_realtime_language = None
+                            self.detected_realtime_language_probability = 0.0
+
+                        if isinstance(segments, dict):
+                            realtime_text = segments["text"]
+                        else:
+                            realtime_text = " ".join(
+                                seg.text for seg in segments
+                            )
                         logging.debug(f"Realtime text detected: {realtime_text}")
 
                     # double check recording state

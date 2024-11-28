@@ -67,12 +67,13 @@ from collections import deque
 from datetime import datetime
 import logging
 import asyncio
+import sounddevice
 import pyaudio
 import sys
 
 
-debug_logging = False
-extended_logging = False
+debug_logging = True
+extended_logging = True
 send_recorded_chunk = False
 log_incoming_chunks = False
 silence_timing = False
