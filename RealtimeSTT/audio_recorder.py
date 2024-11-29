@@ -2132,35 +2132,6 @@ class AudioToTextRecorder:
                                 logging.error(f"Error in realtime transcription: {str(e)}")
                                 continue
                     else:
-                        # Perform transcription and assemble the text
-                        # if self.realtime_model_type == "mlx-community/whisper-large-v3-mlx":
-                        #     import mlx_whisper
-                        #
-                        #     segments = mlx_whisper.transcribe(
-                        #         audio_array,
-                        #         path_or_hf_repo=self.realtime_model_type)
-                        #     info = None
-                        #     print(f"{bcolors.OKGREEN}self.run!!.. {segments}{bcolors.ENDC}")
-                        # elif "openai/whisper-large-v3" in self.realtime_model_type:
-                        #     input_features = self.asr_processor(audio_array,
-                        #                                         sampling_rate=self.sample_rate,
-                        #                                         return_tensors="pt").input_features
-                        #     # import time
-                        #     # start = time.time()
-                        #     language = self.detect_language(self.asr_model, self.asr_pipeline.tokenizer, input_features,
-                        #                                     {'en', 'ko', 'vi'})
-                        #     # logger.info(f"Language detection {time.time() - start} secs")
-                        #     # print(f"language: {language}")
-                        #
-                        #     segments = self.asr_pipeline(audio_array,
-                        #                                   generate_kwargs={
-                        #                                       "language": 'ko'},
-                        #                                   )
-                        #     segments["language"] = language
-                        #     info = None
-                        #     print(f"{bcolors.OKGREEN}self.run!!.. {segments}{bcolors.ENDC}")
-                        # else:
-                        print("????????")
                         segments, info = self.realtime_model_type.transcribe(
                             audio_array,
                             language=self.language if self.language else None,
