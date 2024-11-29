@@ -63,6 +63,38 @@
       font-weight: 600;
       word-wrap: break-word;
     }
+    #fullTextContainer_ko {
+      height: 150px; /* Fixed height to prevent layout shift */
+      overflow-y: auto;
+      width: 100%;
+      padding: 10px;
+      box-sizing: border-box;
+      background-color: #f9f9f9;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+    #fullText_ko {
+      color: #4c6faf;
+      font-size: 18px;
+      font-weight: 600;
+      word-wrap: break-word;
+    }
+    #fullTextContainer_vi {
+      height: 150px; /* Fixed height to prevent layout shift */
+      overflow-y: auto;
+      width: 100%;
+      padding: 10px;
+      box-sizing: border-box;
+      background-color: #f9f9f9;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+    #fullText_vi {
+      color: #af6f4c;
+      font-size: 18px;
+      font-weight: 600;
+      word-wrap: break-word;
+    }
     .last-word {
       color: #007bff;
       font-weight: 600;
@@ -93,11 +125,22 @@
     <div id="status">Press "Start Recording"...</div>
     <button id="startButton" onclick="startRecording()">Start Recording</button>
     <button id="stopButton" onclick="stopRecording()" disabled>Stop Recording</button>
+    Realtime
     <div id="transcriptionContainer">
       <div id="transcription" class="realtime"></div>
     </div>
+    Full sentence
     <div id="fullTextContainer">
       <div id="fullText"></div>
+    </div>
+    Korean
+    <div id="fullTextContainer_ko">
+      <div id="fullText_ko"></div>
+    </div>
+    Vietnamese
+    <div id="fullTextContainer_vi">
+
+      <div id="fullText_vi"></div>
     </div>
   </div>
 
@@ -105,13 +148,15 @@
     const statusDiv = document.getElementById("status");
     const transcriptionDiv = document.getElementById("transcription");
     const fullTextDiv = document.getElementById("fullText");
+    const fullTextDiv_ko = document.getElementById("fullText_ko");
+    const fullTextDiv_vi = document.getElementById("fullText_vi");
     const startButton = document.getElementById("startButton");
     const stopButton = document.getElementById("stopButton");
 
     // const controlURL = "ws://127.0.0.1:8011";
-    // const dataURL = "ws://127.0.0.1:8012";
-    const controlURL = "wss://13ff-35-198-216-50.ngrok-free.app"
-    const dataURL = "wss://ef50-35-198-216-50.ngrok-free.app"
+    const dataURL = "ws://127.0.0.1:8012";
+    // const controlURL = "wss://13ff-35-198-216-50.ngrok-free.app"
+    // const dataURL = "wss://ef50-35-198-216-50.ngrok-free.app"
     let dataSocket;
     let audioContext;
     let mediaStream;
@@ -133,9 +178,10 @@
           if (message.type === "realtime") {
             // Show real-time transcription with the last word in bold, orange
             let words = message.text.split(" ");
+            let detected_realtime_language = message.detected_realtime_language;
             let lastWord = words.pop();
             transcriptionDiv.innerHTML = `${words.join(" ")} <span class="last-word">${lastWord}</span>`;
-
+            console.log(detected_realtime_language);
             // Auto-scroll to the bottom of the transcription container
             const transcriptionContainer = document.getElementById("transcriptionContainer");
             transcriptionContainer.scrollTop = transcriptionContainer.scrollHeight;
@@ -143,10 +189,22 @@
             // Accumulate the final transcription in green
             fullTextDiv.innerHTML += message.text + " ";
             transcriptionDiv.innerHTML = message.text;
+            detected_language = message.detected_language;
+            console.log('detected_language: '+detected_language);
+            console.log('message.text_ko: '+message.text_ko);
+            console.log('message.text_vi: '+message.text_vi);
 
+            fullTextDiv_ko.innerHTML += message.text_ko + " ";
+            fullTextDiv_vi.innerHTML += message.text_vi + " ";
             // Scroll to the bottom of fullTextContainer when new text is added
             const fullTextContainer = document.getElementById("fullTextContainer");
             fullTextContainer.scrollTop = fullTextContainer.scrollHeight;
+
+            const fullTextContainer_ko = document.getElementById("fullTextContainer_ko");
+            fullTextContainer_ko.scrollTop = fullTextContainer_ko.scrollHeight;
+
+            const fullTextContainer_vi = document.getElementById("fullTextContainer_vi");
+            fullTextContainer_vi.scrollTop = fullTextContainer_vi.scrollHeight;
           }
         } catch (e) {
           console.error("Error parsing message:", e);

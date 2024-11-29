@@ -210,7 +210,9 @@ def debug_print(message):
         thread_name = threading.current_thread().name
         print(f"{Fore.CYAN}[DEBUG][{timestamp}][{thread_name}] {message}{Style.RESET_ALL}", file=sys.stderr)
 
-def text_detected(text, loop):
+def text_detected(data_dict, loop):
+    text = data_dict["text"]
+    detected_realtime_language = data_dict["detected_realtime_language"]
     global prev_text
 
     text = preprocess_text(text)
@@ -265,7 +267,8 @@ def text_detected(text, loop):
     # Put the message in the audio queue to be sent to clients
     message = json.dumps({
         'type': 'realtime',
-        'text': text
+        'text': text,
+        "detected_realtime_language": detected_realtime_language,
     })
     asyncio.run_coroutine_threadsafe(audio_queue.put(message), loop)
 
@@ -491,13 +494,20 @@ def _recorder_thread(loop):
     print(f"{bcolors.OKGREEN}{bcolors.BOLD}RealtimeSTT initialized{bcolors.ENDC}")
     recorder_ready.set()
     
-    def process_text(full_sentence):
+    def process_text(data_dict):
+        full_sentence = data_dict["full_sentence"]
+        detected_language = data_dict["detected_language"]
+        translated_transcription = data_dict["translated_transcription"]
+
         global prev_text
         prev_text = ""
         full_sentence = preprocess_text(full_sentence)
         message = json.dumps({
             'type': 'fullSentence',
-            'text': full_sentence
+            'text': full_sentence,
+            'detected_language':detected_language,
+            "text_ko": translated_transcription["ko"],
+            "text_vi": translated_transcription["vi"],
         })
         # Use the passed event loop here
         asyncio.run_coroutine_threadsafe(audio_queue.put(message), loop)

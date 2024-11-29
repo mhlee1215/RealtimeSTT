@@ -156,7 +156,6 @@ class TranscriptionWorker:
                     audio, language = self.queue.get(timeout=0.1)
                     try:
                         language = None
-                        print(f"!!!!!!!! {language}")
                         segments, info = model.transcribe(
                             audio,
                             language=language if language else None,
@@ -168,7 +167,25 @@ class TranscriptionWorker:
                         transcription = " ".join(seg.text for seg in segments).strip()
                         logging.debug(f"Final text detected with main model: {transcription}")
                         print(f"{info.language}")
-                        self.conn.send(('success', (transcription, info)))
+
+                        translated_transcription_dict = dict()
+                        for target_lang in ["ko", "vi"]:
+                            if info.language == target_lang:
+                                translated_transcription_dict[target_lang] = transcription
+
+                            translated_segments, translated_info = model.transcribe(
+                                audio,
+                                language=target_lang,
+                                beam_size=self.beam_size,
+                                initial_prompt=self.initial_prompt,
+                                suppress_tokens=self.suppress_tokens,
+                                task="transcribe"
+                            )
+
+                            translated_transcription = " ".join(seg.text for seg in translated_segments).strip()
+                            translated_transcription_dict[target_lang] = translated_transcription
+
+                        self.conn.send(('success', (transcription, info, translated_transcription_dict)))
                     except Exception as e:
                         logging.error(f"General error in transcription: {e}")
                         self.conn.send(('error', str(e)))
@@ -1350,12 +1367,14 @@ class AudioToTextRecorder:
                 self.allowed_to_early_transcribe = True
                 self._set_state("inactive")
                 if status == 'success':
-                    segments, info = result
+                    segments, info, translated_transcription = result
+                    print(translated_transcription)
                     self.detected_language = info.language if info.language_probability > 0 else None
                     self.detected_language_probability = info.language_probability
                     self.last_transcription_bytes = copy.deepcopy(audio_copy)                    
                     self.last_transcription_bytes_b64 = base64.b64encode(self.last_transcription_bytes.tobytes()).decode('utf-8')
                     transcription = self._preprocess_output(segments)
+                    translated_transcription = { lang:self._preprocess_output(segments) for lang, segments in translated_transcription.items()}
                     end_time = time.time()  # End timing
                     transcription_time = end_time - start_time
 
@@ -1364,7 +1383,12 @@ class AudioToTextRecorder:
                             print(f"Model {self.main_model_type} completed transcription in {transcription_time:.2f} seconds")
                         else:
                             logging.debug(f"Model {self.main_model_type} completed transcription in {transcription_time:.2f} seconds")
-                    return transcription
+
+                    return {
+                        "full_sentence":transcription,
+                        "detected_language":self.detected_language,
+                        "translated_transcription": translated_transcription,
+                    }
                 else:
                     logging.error(f"Transcription error: {result}")
                     raise Exception(result)
@@ -2155,6 +2179,7 @@ class AudioToTextRecorder:
                                 seg.text for seg in segments
                             )
                         logging.debug(f"Realtime text detected: {realtime_text}")
+                        print(f"Realtime text detected: {realtime_text} {self.detected_realtime_language}")
 
                     # double check recording state
                     # because it could have changed mid-transcription
@@ -2230,10 +2255,15 @@ class AudioToTextRecorder:
 
                         # Invoke the callback with the transcribed text
                         self._on_realtime_transcription_update(
-                            self._preprocess_output(
-                                self.realtime_transcription_text,
-                                True
-                            )
+                            {
+                                "text":self._preprocess_output(
+                                    self.realtime_transcription_text,
+                                    True
+                                ),
+                                "detected_realtime_language":self.detected_realtime_language
+
+                            }
+
                         )
 
                 # If not recording, sleep briefly before checking again
@@ -2539,7 +2569,7 @@ class AudioToTextRecorder:
             if self.is_recording:
                 self.on_realtime_transcription_stabilized(text)
 
-    def _on_realtime_transcription_update(self, text):
+    def _on_realtime_transcription_update(self, data_dict):
         """
         Callback method invoked when there's an update in the real-time
         transcription.
@@ -2555,7 +2585,7 @@ class AudioToTextRecorder:
         """
         if self.on_realtime_transcription_update:
             if self.is_recording:
-                self.on_realtime_transcription_update(text)
+                self.on_realtime_transcription_update(data_dict)
 
     def __enter__(self):
         """
