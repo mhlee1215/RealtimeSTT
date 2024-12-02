@@ -362,6 +362,9 @@ def parse_arguments():
     parser.add_argument('-m', '--model', type=str, default='large-v2',
                         help='Path to the STT model or model size. Options include: tiny, tiny.en, base, base.en, small, small.en, medium, medium.en, large-v1, large-v2, or any huggingface CTranslate2 STT model such as deepdml/faster-whisper-large-v3-turbo-ct2. Default is large-v2.')
 
+    parser.add_argument('-C', '--compute-type', type=str, default='default',
+                        help='Compute type. a.k.a precision')
+
     parser.add_argument('-r', '--rt-model', '--realtime_model_type', type=str, default='tiny',
                         help='Model size for real-time transcription. Options same as --model.  This is used only if real-time transcription is enabled (enable_realtime_transcription). Default is tiny.en.')
     
@@ -712,6 +715,7 @@ async def main_async():
     recorder_config = {
         'model': args.model,
         'realtime_model_type': args.rt_model,
+        'compute_type': args.compute_type,
         'language': args.lang,
         'input_device_index': args.input_device,
         'silero_sensitivity': args.silero_sensitivity,

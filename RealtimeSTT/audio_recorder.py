@@ -59,7 +59,7 @@ import re
 import gc
 # from transformers import pipeline
 # from transformers import WhisperForConditionalGeneration, WhisperProcessor, WhisperTokenizer
-
+from transformers import M2M100ForConditionalGeneration, M2M100Tokenizer
 
 
 # Set OpenMP runtime duplicate library handling to OK (Use only for development!)
@@ -133,12 +133,16 @@ class TranscriptionWorker:
 
         logging.info(f"Initializing faster_whisper main transcription model {self.model_path}")
         try:
+            print(f'whipser compute type : {self.compute_type}')
             model = faster_whisper.WhisperModel(
                 model_size_or_path=self.model_path,
                 device=self.device,
                 compute_type=self.compute_type,
                 device_index=self.gpu_device_index,
             )
+
+            translate_model = M2M100ForConditionalGeneration.from_pretrained("facebook/m2m100_418M").eval()
+            translate_tokenizer = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M")
         except Exception as e:
             logging.exception(f"Error initializing main faster_whisper transcription model: {e}")
             raise
@@ -168,21 +172,33 @@ class TranscriptionWorker:
                         logging.debug(f"Final text detected with main model: {transcription}")
                         print(f"{info.language}")
 
+                        translate_tokenizer.src_lang = info.language
+                        encoded_hi = translate_tokenizer(transcription, return_tensors="pt")  # .to(self.device)
+
                         translated_transcription_dict = dict()
                         for target_lang in ["ko", "vi"]:
                             if info.language == target_lang:
                                 translated_transcription_dict[target_lang] = transcription
 
-                            translated_segments, translated_info = model.transcribe(
-                                audio,
-                                language=target_lang,
-                                beam_size=self.beam_size,
-                                initial_prompt=self.initial_prompt,
-                                suppress_tokens=self.suppress_tokens,
-                                task="transcribe"
-                            )
+                            # translated_segments, translated_info = model.transcribe(
+                            #     audio,
+                            #     language=target_lang,
+                            #     beam_size=self.beam_size,
+                            #     initial_prompt=self.initial_prompt,
+                            #     suppress_tokens=self.suppress_tokens,
+                            #     task="translate"
+                            # )
 
-                            translated_transcription = " ".join(seg.text for seg in translated_segments).strip()
+                            generated_tokens = translate_model.generate(**encoded_hi,
+                                                                        forced_bos_token_id=translate_tokenizer.get_lang_id(
+                                                                            target_lang))
+                            translated_transcription = " ".join(translate_tokenizer.batch_decode(generated_tokens, skip_special_tokens=True))
+
+                            # import ipdb
+                            # ipdb.set_trace()
+                            # print(translated_segments)
+
+                            # translated_transcription = " ".join(seg.text for seg in translated_segments).strip()
                             translated_transcription_dict[target_lang] = translated_transcription
 
                         self.conn.send(('success', (transcription, info, translated_transcription_dict)))
