@@ -141,7 +141,7 @@ class TranscriptionWorker:
                 device_index=self.gpu_device_index,
             )
 
-            translate_model = M2M100ForConditionalGeneration.from_pretrained("facebook/m2m100_418M").eval()
+            translate_model = M2M100ForConditionalGeneration.from_pretrained("facebook/m2m100_418M").to(self.device).eval()
             translate_tokenizer = M2M100Tokenizer.from_pretrained("facebook/m2m100_418M")
         except Exception as e:
             logging.exception(f"Error initializing main faster_whisper transcription model: {e}")
@@ -160,6 +160,8 @@ class TranscriptionWorker:
                     audio, language = self.queue.get(timeout=0.1)
                     try:
                         language = None
+
+                        start = time.time()
                         segments, info = model.transcribe(
                             audio,
                             language=language if language else None,
@@ -168,18 +170,26 @@ class TranscriptionWorker:
                             suppress_tokens=self.suppress_tokens,
                             task="transcribe"
                         )
+                        print(f"model elapse = {time.time() - start}")
+
                         transcription = " ".join(seg.text for seg in segments).strip()
                         logging.debug(f"Final text detected with main model: {transcription}")
                         print(f"{info.language}")
 
                         translate_tokenizer.src_lang = info.language
-                        encoded_hi = translate_tokenizer(transcription, return_tensors="pt")  # .to(self.device)
 
+                        start = time.time()
+                        encoded_hi = translate_tokenizer(transcription, return_tensors="pt").to(self.device)
+                        print(f"encode model elapse = {time.time() - start}")
+
+                        start = time.time()
                         translated_transcription_dict = dict()
                         for target_lang in ["ko", "vi"]:
                             if info.language == target_lang:
                                 translated_transcription_dict[target_lang] = transcription
+                                continue
 
+                            print("Run translation model!")
                             # translated_segments, translated_info = model.transcribe(
                             #     audio,
                             #     language=target_lang,
@@ -201,6 +211,7 @@ class TranscriptionWorker:
                             # translated_transcription = " ".join(seg.text for seg in translated_segments).strip()
                             translated_transcription_dict[target_lang] = translated_transcription
 
+                        print(f"translation model elapse = {time.time() - start}")
                         self.conn.send(('success', (transcription, info, translated_transcription_dict)))
                     except Exception as e:
                         logging.error(f"General error in transcription: {e}")
@@ -2174,7 +2185,7 @@ class AudioToTextRecorder:
                     else:
                         segments, info = self.realtime_model_type.transcribe(
                             audio_array,
-                            language=self.language if self.language else None,
+                            language=None, #self.language if self.language else None,
                             beam_size=self.beam_size_realtime,
                             initial_prompt=self.initial_prompt,
                             suppress_tokens=self.suppress_tokens,
@@ -2191,6 +2202,8 @@ class AudioToTextRecorder:
                         if isinstance(segments, dict):
                             realtime_text = segments["text"]
                         else:
+                            print(info)
+                            print('\n')
                             realtime_text = " ".join(
                                 seg.text for seg in segments
                             )
